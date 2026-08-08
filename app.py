@@ -30,15 +30,20 @@ except sqlite3.Error:
     st.error("Не удалось подготовить локальную базу данных в папке data.")
     st.stop()
 
+audit_page = st.Page(
+    render_audit_page,
+    title="Новый аудит",
+    default=True,
+)
+
+
+def history_page_renderer() -> None:
+    render_history_page(audit_page)
+
+
+history_page = st.Page(history_page_renderer, title="История")
 navigation = st.navigation(
-    [
-        st.Page(
-            render_audit_page,
-            title="Новый аудит",
-            default=True,
-        ),
-        st.Page(render_history_page, title="История"),
-    ],
+    [audit_page, history_page],
     position="sidebar",
 )
 navigation.run()

@@ -2,6 +2,8 @@
 
 from it_audit.models import Category, Question
 
+QUESTIONNAIRE_VERSION = "1.1"
+
 CATEGORIES: tuple[Category, ...] = (
     Category("infrastructure", "Инфраструктура"),
     Category("security", "Информационная безопасность"),

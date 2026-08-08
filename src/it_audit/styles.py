@@ -166,6 +166,9 @@ p, label, input, button { font-size: .94rem; }
 }
 .history-table td { padding: .72rem .7rem; border: 1px solid var(--audit-line); }
 .history-table strong { color: var(--audit-blue); }
+.comparison-table { min-width: 520px; }
+.comparison-table .delta-up { color: #16803a; font-weight: 750; }
+.comparison-table .delta-down { color: var(--audit-red); font-weight: 750; }
 .risk-mark { width: 5px; padding: 0 !important; }
 .risk-mark.high { background: var(--audit-red); }
 .risk-mark.medium { background: var(--audit-amber); }

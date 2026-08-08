@@ -5,8 +5,15 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from it_audit.catalog import CATEGORIES, QUESTIONS, QUESTIONS_BY_ID, questions_for_category
+from it_audit.catalog import (
+    CATEGORIES,
+    QUESTIONNAIRE_VERSION,
+    QUESTIONS,
+    QUESTIONS_BY_ID,
+    questions_for_category,
+)
 from it_audit.models import AuditResult, CompanyProfile, RiskItem, RoadmapItem
+from it_audit.version import __version__
 
 SEVERITY_BY_ANSWER = {
     1: ("Высокий", 30),
@@ -25,6 +32,8 @@ ROADMAP_DEFAULTS = {
     60: "Проверить прогресс и скорректировать план улучшений.",
     90: "Повторно измерить показатели и закрепить рабочие практики.",
 }
+
+NOT_APPLICABLE = 0
 
 
 def maturity_label(score: int) -> str:
@@ -57,13 +66,19 @@ def _validate_answers(answers: dict[str, int]) -> None:
     invalid = {
         question_id: value
         for question_id, value in answers.items()
-        if value not in range(1, 6)
+        if not isinstance(value, int) or value not in range(NOT_APPLICABLE, 6)
     }
     if invalid:
-        raise ValueError("Каждый ответ должен быть целым числом от 1 до 5")
+        raise ValueError(
+            "Каждый ответ должен быть целым числом от 1 до 5 "
+            "или значением «Не применимо»"
+        )
 
 
-def _category_score(values: list[int]) -> int:
+def _category_score(values: list[int]) -> int | None:
+    values = [value for value in values if value != NOT_APPLICABLE]
+    if not values:
+        return None
     average = sum(values) / len(values)
     return round((average - 1) / 4 * 100)
 
@@ -75,6 +90,8 @@ def build_risks(answers: dict[str, int]) -> tuple[RiskItem, ...]:
     candidates: list[tuple[int, int, RiskItem]] = []
     for order, question in enumerate(QUESTIONS):
         answer = answers[question.id]
+        if answer == NOT_APPLICABLE:
+            continue
         if answer > 3:
             continue
         severity, horizon = SEVERITY_BY_ANSWER[answer]
@@ -130,7 +147,10 @@ def calculate_result(
         )
         for category in CATEGORIES
     }
-    overall_score = round(sum(scores.values()) / len(scores))
+    applicable_scores = [score for score in scores.values() if score is not None]
+    if not applicable_scores:
+        raise ValueError("Нужен хотя бы один применимый ответ для расчёта результата")
+    overall_score = round(sum(applicable_scores) / len(applicable_scores))
     risks = build_risks(answers)
     return AuditResult(
         id=audit_id or str(uuid4()),
@@ -142,4 +162,6 @@ def calculate_result(
         maturity=maturity_label(overall_score),
         risks=risks,
         roadmap=build_roadmap(risks),
+        questionnaire_version=QUESTIONNAIRE_VERSION,
+        app_version=__version__,
     )

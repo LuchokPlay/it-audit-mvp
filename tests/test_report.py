@@ -24,4 +24,5 @@ def test_report_is_utf8_printable_and_escapes_user_input() -> None:
     assert '<script>alert("x")</script>' not in report
     assert "Транспорт &amp; логистика" in report
     assert "План 30 / 60 / 90 дней" in report
-
+    assert f"Версия анкеты: {result.questionnaire_version}" in report
+    assert f"Версия приложения: {result.app_version}" in report

@@ -1,7 +1,9 @@
+import sqlite3
+
 from it_audit.catalog import QUESTIONS
 from it_audit.models import CompanyProfile
 from it_audit.scoring import calculate_result
-from it_audit.storage import delete_audit, get_audit, list_audits, save_audit
+from it_audit.storage import delete_audit, get_audit, init_db, list_audits, save_audit
 
 
 def make_result():
@@ -27,6 +29,8 @@ def test_storage_round_trip_and_duplicate_protection(tmp_path) -> None:
 
     assert len(summaries) == 1
     assert summaries[0].company_name == "Альфа Логистика"
+    assert summaries[0].questionnaire_version == result.questionnaire_version
+    assert summaries[0].app_version == result.app_version
     assert restored == result
 
 
@@ -43,3 +47,32 @@ def test_delete_audit_removes_only_existing_record(tmp_path) -> None:
     assert delete_audit(result.id, database) is False
     assert get_audit(result.id, database) is None
     assert list_audits(database) == []
+
+
+def test_init_db_adds_questionnaire_version_to_existing_database(tmp_path) -> None:
+    database = tmp_path / "audit.db"
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            """
+            CREATE TABLE audits (
+                id TEXT PRIMARY KEY,
+                created_at TEXT NOT NULL,
+                company_name TEXT NOT NULL,
+                industry TEXT NOT NULL,
+                employee_range TEXT NOT NULL,
+                overall_score INTEGER NOT NULL,
+                maturity TEXT NOT NULL,
+                answers_json TEXT NOT NULL,
+                scores_json TEXT NOT NULL,
+                risks_json TEXT NOT NULL,
+                roadmap_json TEXT NOT NULL
+            )
+            """
+        )
+
+    init_db(database)
+
+    with sqlite3.connect(database) as connection:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(audits)")}
+    assert "questionnaire_version" in columns
+    assert "app_version" in columns

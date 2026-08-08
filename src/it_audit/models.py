@@ -89,11 +89,13 @@ class AuditResult:
     created_at: str
     profile: CompanyProfile
     answers: dict[str, int]
-    scores: dict[str, int]
+    scores: dict[str, int | None]
     overall_score: int
     maturity: str
     risks: tuple[RiskItem, ...]
     roadmap: tuple[RoadmapItem, ...]
+    questionnaire_version: str = "1.0"
+    app_version: str = "0.2.0"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -106,6 +108,8 @@ class AuditResult:
             "maturity": self.maturity,
             "risks": [risk.to_dict() for risk in self.risks],
             "roadmap": [item.to_dict() for item in self.roadmap],
+            "questionnaire_version": self.questionnaire_version,
+            "app_version": self.app_version,
         }
 
     @classmethod
@@ -115,11 +119,16 @@ class AuditResult:
             created_at=str(value["created_at"]),
             profile=CompanyProfile.from_dict(value["profile"]),
             answers={str(key): int(score) for key, score in value["answers"].items()},
-            scores={str(key): int(score) for key, score in value["scores"].items()},
+            scores={
+                str(key): None if score is None else int(score)
+                for key, score in value["scores"].items()
+            },
             overall_score=int(value["overall_score"]),
             maturity=str(value["maturity"]),
             risks=tuple(RiskItem.from_dict(item) for item in value["risks"]),
             roadmap=tuple(RoadmapItem.from_dict(item) for item in value["roadmap"]),
+            questionnaire_version=str(value.get("questionnaire_version", "1.0")),
+            app_version=str(value.get("app_version", "0.2.0")),
         )
 
 
@@ -131,4 +140,5 @@ class AuditSummary:
     industry: str
     overall_score: int
     maturity: str
-
+    questionnaire_version: str = "1.0"
+    app_version: str = "0.2.0"

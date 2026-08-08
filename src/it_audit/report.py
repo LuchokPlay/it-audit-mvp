@@ -21,15 +21,17 @@ def _score_rows(result: AuditResult) -> str:
     rows = []
     for category in CATEGORIES:
         score = result.scores[category.key]
-        color = "#e53935" if score < 40 else "#123fad"
+        score_label = "Н/Д" if score is None else str(score)
+        width = 0 if score is None else score
+        color = "#98a2b3" if score is None else "#e53935" if score < 40 else "#123fad"
         rows.append(
             f"""
             <div class="score-row">
               <div class="score-label">{escape(category.title)}</div>
               <div class="score-track">
-                <div class="score-fill" style="width:{score}%;background:{color}"></div>
+                <div class="score-fill" style="width:{width}%;background:{color}"></div>
               </div>
-              <strong>{score}</strong>
+              <strong>{score_label}</strong>
             </div>
             """
         )
@@ -127,13 +129,18 @@ def render_html_report(result: AuditResult) -> str:
       <span>{escape(result.profile.industry)}</span>
       <span>{escape(result.profile.employee_range)} сотрудников</span>
       <span>{_format_date(result.created_at)}</span>
+      <span>Версия анкеты: {escape(result.questionnaire_version)}</span>
+      <span>Версия приложения: {escape(result.app_version)}</span>
     </div>
     <div class="overall">
       <strong>{result.overall_score}</strong>
       <span>{escape(result.maturity)} уровень</span>
     </div>
   </header>
-  <section><h2>Оценки по направлениям</h2>{_score_rows(result)}</section>
+  <section>
+    <h2>Оценки по направлениям</h2>{_score_rows(result)}
+    <p class="meta">Ответы «Не применимо» исключены из расчёта среднего балла.</p>
+  </section>
   <section><h2>Ключевые риски</h2><table>
     <thead><tr><th>Риск</th><th>Уровень</th><th>Горизонт</th></tr></thead>
     <tbody>{_risk_rows(result)}</tbody>

@@ -11,9 +11,9 @@ from typing import Any
 import streamlit as st
 
 from it_audit.catalog import CATEGORIES, questions_for_category
-from it_audit.models import AuditResult, CompanyProfile
+from it_audit.models import AuditResult, AuditSummary, CompanyProfile
 from it_audit.report import render_html_report
-from it_audit.scoring import calculate_result
+from it_audit.scoring import NOT_APPLICABLE, calculate_result
 from it_audit.storage import delete_audit, get_audit, list_audits, save_audit
 
 LOGGER = logging.getLogger(__name__)
@@ -34,9 +34,13 @@ INDUSTRIES = (
     "Другое",
 )
 
-EMPLOYEE_RANGES = ("До 50", "50–100", "101–250", "251–1000", "Более 1000")
+EMPLOYEE_RANGES = ("1–50", "51–100", "101–250", "251–1000", "Более 1000")
+LEGACY_EMPLOYEE_RANGES = {"До 50": "1–50", "50–100": "51–100"}
+ANSWER_OPTIONS = (1, 2, 3, 4, 5, NOT_APPLICABLE)
 DRAFT_KEY = "audit_draft"
 HISTORY_NOTICE_KEY = "history_notice"
+HISTORY_SELECTED_KEY = "history_selected_audit"
+COMPARISON_SELECTED_KEY = "comparison_selected_audit"
 
 
 def _empty_draft() -> dict[str, Any]:
@@ -60,6 +64,21 @@ def _reset_draft() -> None:
     for key in tuple(st.session_state):
         if key.startswith("answer_"):
             del st.session_state[key]
+
+
+def _normalize_employee_range(value: str) -> str:
+    return LEGACY_EMPLOYEE_RANGES.get(value, value)
+
+
+def _start_repeat(result: AuditResult) -> None:
+    """Начинает новую анкету с реквизитами выбранного сохранённого аудита."""
+
+    _reset_draft()
+    st.session_state[DRAFT_KEY]["profile"] = {
+        "name": result.profile.name,
+        "industry": result.profile.industry,
+        "employee_range": _normalize_employee_range(result.profile.employee_range),
+    }
 
 
 def _progress(step: int) -> None:
@@ -94,6 +113,7 @@ def _profile_header(profile: dict[str, str], step: int) -> None:
 
 def _render_profile_step(draft: dict[str, Any]) -> None:
     profile = draft["profile"]
+    profile["employee_range"] = _normalize_employee_range(profile["employee_range"])
     _profile_header(profile, 1)
     with st.form("profile_form"):
         name = st.text_input(
@@ -153,7 +173,10 @@ def _render_question_step(draft: dict[str, Any]) -> None:
     _profile_header(profile, draft["step"] + 1)
 
     st.subheader(category.title)
-    st.caption("Оцените по шкале от 1 до 5, где 1 — очень низкий уровень, 5 — зрелая практика.")
+    st.caption(
+        "Оцените по шкале от 1 до 5, где 1 — очень низкий уровень, "
+        "5 — зрелая практика. «Не применимо» исключается из среднего балла."
+    )
 
     values: dict[str, int | None] = {}
     with st.form(f"questions_{category.key}"):
@@ -169,8 +192,17 @@ def _render_question_step(draft: dict[str, Any]) -> None:
                 saved_value = draft["answers"].get(question.id)
                 values[question.id] = st.radio(
                     question.text,
-                    options=(1, 2, 3, 4, 5),
-                    index=saved_value - 1 if saved_value else None,
+                    options=ANSWER_OPTIONS,
+                    index=(
+                        ANSWER_OPTIONS.index(saved_value)
+                        if saved_value is not None
+                        else None
+                    ),
+                    format_func=(
+                        lambda value: "Не применимо"
+                        if value == NOT_APPLICABLE
+                        else str(value)
+                    ),
                     horizontal=True,
                     label_visibility="collapsed",
                     key=f"answer_{question.id}",
@@ -208,7 +240,11 @@ def _render_question_step(draft: dict[str, Any]) -> None:
         st.rerun()
 
     company = CompanyProfile(**profile)
-    draft["result"] = calculate_result(company, draft["answers"])
+    try:
+        draft["result"] = calculate_result(company, draft["answers"])
+    except ValueError as error:
+        st.error(str(error))
+        return
     draft["step"] = 5
     draft["saved"] = False
     st.rerun()
@@ -219,15 +255,17 @@ def _score_markup(result: AuditResult) -> str:
     bars = []
     for category in CATEGORIES:
         score = result.scores[category.key]
-        critical = " critical" if score < 40 else ""
+        score_label = "Н/Д" if score is None else str(score)
+        width = 0 if score is None else score
+        critical = " critical" if score is not None and score < 40 else ""
         values.append(
             f'<div class="score-value-row"><span>{escape(category.title)}</span>'
-            f'<strong class="{critical.strip()}">{score}</strong></div>'
+            f'<strong class="{critical.strip()}">{score_label}</strong></div>'
         )
         bars.append(
             f'<div class="bar-row"><span>{escape(category.title)}</span>'
             f'<div class="bar-track"><div class="bar-fill{critical}" '
-            f'style="width:{score}%"></div></div><strong>{score}</strong></div>'
+            f'style="width:{width}%"></div></div><strong>{score_label}</strong></div>'
         )
     return (
         '<div class="score-layout"><div class="score-values">'
@@ -319,10 +357,13 @@ def render_result(result: AuditResult, *, allow_save: bool, saved: bool = False)
     )
     st.markdown(
         f'<div class="overall-note">Общая оценка: {result.overall_score} · '
-        f'{escape(result.maturity)} уровень</div>',
+        f'{escape(result.maturity)} уровень · Версия анкеты: '
+        f'{escape(result.questionnaire_version)} · Версия приложения: '
+        f'{escape(result.app_version)}</div>',
         unsafe_allow_html=True,
     )
     st.markdown(_score_markup(result), unsafe_allow_html=True)
+    st.caption("Ответы «Не применимо» исключены из расчёта среднего балла.")
     st.subheader("Ключевые риски")
     st.markdown(_risk_markup(result), unsafe_allow_html=True)
     st.subheader("План 30 / 60 / 90 дней")
@@ -354,22 +395,141 @@ def _format_history_date(value: str) -> str:
         return value
 
 
-def render_history_page() -> None:
+def _filter_summaries(summaries: list[AuditSummary]) -> list[AuditSummary]:
+    query_column, industry_column, maturity_column = st.columns([1.5, 1, 1])
+    with query_column:
+        query = st.text_input("Поиск по компании", placeholder="Введите название")
+    industries = sorted({summary.industry for summary in summaries})
+    with industry_column:
+        industry = st.selectbox("Отрасль", ("Все отрасли", *industries))
+    maturity_order = ("Критический", "Реактивный", "Стабильный", "Зрелый")
+    maturities = tuple(
+        maturity
+        for maturity in maturity_order
+        if any(summary.maturity == maturity for summary in summaries)
+    )
+    with maturity_column:
+        maturity = st.selectbox("Уровень", ("Все уровни", *maturities))
+
+    normalized_query = query.strip().casefold()
+    return [
+        summary
+        for summary in summaries
+        if (not normalized_query or normalized_query in summary.company_name.casefold())
+        and (industry == "Все отрасли" or summary.industry == industry)
+        and (maturity == "Все уровни" or summary.maturity == maturity)
+    ]
+
+
+def _score_text(score: int | None) -> str:
+    return "Н/Д" if score is None else str(score)
+
+
+def _render_comparison(selected: AuditResult, summaries: list[AuditSummary]) -> None:
+    candidates = [
+        summary
+        for summary in summaries
+        if summary.id != selected.id
+        and summary.company_name.strip().casefold()
+        == selected.profile.name.strip().casefold()
+    ]
+    if not candidates:
+        return
+
+    candidates_by_id = {summary.id: summary for summary in candidates}
+    if st.session_state.get(COMPARISON_SELECTED_KEY) not in candidates_by_id:
+        st.session_state.pop(COMPARISON_SELECTED_KEY, None)
+    comparison_id = st.selectbox(
+        "Сравнить с другим аудитом этой компании",
+        options=list(candidates_by_id),
+        format_func=lambda audit_id: (
+            f"{_format_history_date(candidates_by_id[audit_id].created_at)} — "
+            f"{candidates_by_id[audit_id].overall_score} баллов"
+        ),
+        key=COMPARISON_SELECTED_KEY,
+    )
+    try:
+        comparison = get_audit(comparison_id)
+    except sqlite3.Error:
+        LOGGER.exception("Не удалось загрузить аудит для сравнения")
+        st.error("Не удалось загрузить аудит для сравнения.")
+        return
+    if comparison is None:
+        st.warning("Аудит для сравнения больше не найден.")
+        return
+
+    earlier, later = sorted((selected, comparison), key=lambda item: item.created_at)
+    overall_delta = later.overall_score - earlier.overall_score
+    st.subheader("Динамика результатов")
+    st.caption(
+        f"Сравниваются анкеты версий {earlier.questionnaire_version} и "
+        f"{later.questionnaire_version}."
+    )
+    earlier_column, later_column, delta_column = st.columns(3)
+    earlier_column.metric(
+        f"Было · {_format_history_date(earlier.created_at)}", earlier.overall_score
+    )
+    later_column.metric(
+        f"Стало · {_format_history_date(later.created_at)}", later.overall_score
+    )
+    delta_column.metric("Изменение", f"{overall_delta:+d}")
+
+    rows = []
+    for category in CATEGORIES:
+        earlier_score = earlier.scores[category.key]
+        later_score = later.scores[category.key]
+        delta = (
+            None
+            if earlier_score is None or later_score is None
+            else later_score - earlier_score
+        )
+        delta_label = "—" if delta is None else f"{delta:+d}"
+        if delta is None or delta == 0:
+            delta_class = ""
+        else:
+            delta_class = "delta-up" if delta > 0 else "delta-down"
+        rows.append(
+            "<tr>"
+            f"<td>{escape(category.title)}</td>"
+            f"<td>{_score_text(earlier_score)}</td>"
+            f"<td>{_score_text(later_score)}</td>"
+            f'<td class="{delta_class}">{delta_label}</td>'
+            "</tr>"
+        )
+    st.markdown(
+        '<div class="table-scroll"><table class="history-table comparison-table">'
+        "<thead><tr><th>Направление</th><th>Было</th><th>Стало</th>"
+        "<th>Изменение</th></tr></thead>"
+        f"<tbody>{''.join(rows)}</tbody></table></div>",
+        unsafe_allow_html=True,
+    )
+
+
+def render_history_page(new_audit_page: Any | None = None) -> None:
     """Показывает сохранённые аудиты и выбранный полный результат."""
 
     st.title("История аудитов")
     if notice := st.session_state.pop(HISTORY_NOTICE_KEY, None):
         st.success(notice)
     try:
-        summaries = list_audits()
+        all_summaries = list_audits()
     except sqlite3.Error:
         LOGGER.exception("Не удалось загрузить историю")
         st.error("Не удалось открыть локальную базу данных.")
         return
-    if not summaries:
+    if not all_summaries:
         st.markdown(
             '<div class="empty-state">'
             "История пока пуста. Завершите и сохраните первый аудит.</div>",
+            unsafe_allow_html=True,
+        )
+        return
+
+    summaries = _filter_summaries(all_summaries)
+    st.caption(f"Найдено аудитов: {len(summaries)} из {len(all_summaries)}")
+    if not summaries:
+        st.markdown(
+            '<div class="empty-state">По заданным фильтрам аудиты не найдены.</div>',
             unsafe_allow_html=True,
         )
         return
@@ -381,17 +541,20 @@ def render_history_page() -> None:
         f"<td>{escape(summary.industry)}</td>"
         f"<td><strong>{summary.overall_score}</strong></td>"
         f"<td>{escape(summary.maturity)}</td>"
+        f"<td>{escape(summary.questionnaire_version)}</td>"
         "</tr>"
         for summary in summaries
     )
     st.markdown(
         '<div class="table-scroll"><table class="history-table">'
         "<thead><tr><th>Дата</th><th>Компания</th><th>Отрасль</th>"
-        "<th>Оценка</th><th>Уровень</th></tr></thead>"
+        "<th>Оценка</th><th>Уровень</th><th>Анкета</th></tr></thead>"
         f"<tbody>{history_rows}</tbody></table></div>",
         unsafe_allow_html=True,
     )
     summaries_by_id = {summary.id: summary for summary in summaries}
+    if st.session_state.get(HISTORY_SELECTED_KEY) not in summaries_by_id:
+        st.session_state.pop(HISTORY_SELECTED_KEY, None)
     selected_id = st.selectbox(
         "Открыть аудит",
         options=list(summaries_by_id),
@@ -399,10 +562,23 @@ def render_history_page() -> None:
             f"{summaries_by_id[audit_id].company_name} — "
             f"{_format_history_date(summaries_by_id[audit_id].created_at)}"
         ),
+        key=HISTORY_SELECTED_KEY,
     )
     selected_summary = summaries_by_id[selected_id]
+    try:
+        result = get_audit(selected_id)
+    except sqlite3.Error:
+        LOGGER.exception("Не удалось загрузить аудит")
+        st.error("Не удалось загрузить выбранный аудит.")
+        return
+    if result is None:
+        st.warning("Выбранный аудит больше не найден.")
+        return
+
     delete_confirmed = False
-    delete_column, _ = st.columns([1.2, 2.8])
+    repeat_column, delete_column, _ = st.columns([1.35, 1.2, 1.6])
+    with repeat_column:
+        repeat_clicked = st.button("Повторить аудит", type="primary", use_container_width=True)
     with delete_column, st.popover("Удалить отчёт", use_container_width=True):
         st.warning(
             f"Удалить аудит «{selected_summary.company_name}»? "
@@ -413,6 +589,12 @@ def render_history_page() -> None:
             key=f"confirm_delete_{selected_id}",
             use_container_width=True,
         )
+    if repeat_clicked:
+        _start_repeat(result)
+        if new_audit_page is not None:
+            st.switch_page(new_audit_page)
+        st.success("Профиль компании перенесён в новую анкету.")
+        return
     if delete_confirmed:
         try:
             deleted = delete_audit(selected_id)
@@ -425,14 +607,6 @@ def render_history_page() -> None:
             st.rerun()
         st.warning("Выбранный аудит уже отсутствует в истории.")
         return
-    try:
-        result = get_audit(selected_id)
-    except sqlite3.Error:
-        LOGGER.exception("Не удалось загрузить аудит")
-        st.error("Не удалось загрузить выбранный аудит.")
-        return
-    if result is None:
-        st.warning("Выбранный аудит больше не найден.")
-        return
     st.markdown('<div class="audit-section-rule"></div>', unsafe_allow_html=True)
+    _render_comparison(result, all_summaries)
     render_result(result, allow_save=False)

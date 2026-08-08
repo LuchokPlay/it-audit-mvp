@@ -1,8 +1,9 @@
 import pytest
 
-from it_audit.catalog import CATEGORIES, QUESTIONS
+from it_audit.catalog import CATEGORIES, QUESTIONNAIRE_VERSION, QUESTIONS
 from it_audit.models import CompanyProfile
-from it_audit.scoring import build_risks, calculate_result, maturity_label
+from it_audit.scoring import NOT_APPLICABLE, build_risks, calculate_result, maturity_label
+from it_audit.version import __version__
 
 PROFILE = CompanyProfile("Альфа Логистика", "Транспорт и логистика", "101–250")
 
@@ -49,6 +50,48 @@ def test_mixed_answers_are_scored_per_category() -> None:
     }
     assert result.overall_score == 38
     assert result.maturity == "Критический"
+    assert result.questionnaire_version == QUESTIONNAIRE_VERSION
+    assert result.app_version == __version__
+
+
+def test_not_applicable_answers_are_excluded_from_category_average() -> None:
+    answers = answers_with(5)
+    infrastructure = [
+        question for question in QUESTIONS if question.category == "infrastructure"
+    ]
+    answers[infrastructure[0].id] = 1
+    answers[infrastructure[1].id] = 5
+    answers[infrastructure[2].id] = NOT_APPLICABLE
+    answers[infrastructure[3].id] = NOT_APPLICABLE
+
+    result = calculate_result(PROFILE, answers)
+
+    assert result.scores["infrastructure"] == 50
+    assert result.overall_score == 88
+
+
+def test_category_with_only_not_applicable_answers_is_not_scored() -> None:
+    answers = answers_with(5)
+    for question in QUESTIONS:
+        if question.category == "infrastructure":
+            answers[question.id] = NOT_APPLICABLE
+
+    result = calculate_result(PROFILE, answers)
+
+    assert result.scores["infrastructure"] is None
+    assert result.overall_score == 100
+
+
+def test_audit_requires_at_least_one_applicable_answer() -> None:
+    with pytest.raises(ValueError, match="хотя бы один применимый"):
+        calculate_result(PROFILE, answers_with(NOT_APPLICABLE))
+
+
+def test_not_applicable_answer_does_not_create_risk() -> None:
+    answers = answers_with(5)
+    answers[QUESTIONS[0].id] = NOT_APPLICABLE
+
+    assert build_risks(answers) == ()
 
 
 def test_profile_metadata_does_not_change_calculation() -> None:
