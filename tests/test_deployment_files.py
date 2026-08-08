@@ -37,6 +37,12 @@ def test_installer_does_not_contain_a_default_password() -> None:
     assert re.search(r"^\s*(?:readonly\s+)?password=", installer, re.MULTILINE) is None
 
 
+def test_installer_checks_caddy_without_public_ip_loopback() -> None:
+    installer = read("deploy/install.sh")
+
+    assert '--resolve "${IT_AUDIT_HOST}:443:127.0.0.1"' in installer
+
+
 def test_container_runs_application_as_non_root() -> None:
     dockerfile = read("Dockerfile")
 

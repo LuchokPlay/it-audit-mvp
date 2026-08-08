@@ -201,6 +201,7 @@ start_application() {
     local http_status=""
     for _ in {1..15}; do
         http_status="$(curl -k -sS -o /dev/null -w '%{http_code}' \
+            --resolve "${IT_AUDIT_HOST}:443:127.0.0.1" \
             "https://${IT_AUDIT_HOST}/" || true)"
         [[ "${http_status}" == "401" ]] && break
         sleep 2
