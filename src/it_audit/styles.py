@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 """Общая визуальная система Streamlit-интерфейса."""
 
 import streamlit as st
@@ -16,6 +17,21 @@ GLOBAL_CSS = """
 }
 
 html, body, [class*="st-"] { font-family: Arial, "Helvetica Neue", sans-serif; }
+.material-symbols-rounded,
+[data-testid="stIconMaterial"],
+[data-testid="stExpanderToggleIcon"] {
+  font-family: "Material Symbols Rounded" !important;
+  font-style: normal;
+  font-weight: normal;
+  letter-spacing: normal;
+  line-height: 1;
+  text-transform: none;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: "liga";
+  font-feature-settings: "liga";
+}
 .stApp { background: #ffffff; color: var(--audit-navy); }
 [data-testid="stHeader"] { background: rgba(255,255,255,.96); }
 [data-testid="stToolbar"] { right: 1rem; }
@@ -115,6 +131,25 @@ p, label, input, button { font-size: .94rem; }
   align-items: stretch;
   margin: 1.15rem 0 2rem;
 }
+.score-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(210px, 320px));
+  gap: .8rem;
+  margin: 1.1rem 0 .7rem;
+}
+.summary-score {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: .15rem 1rem;
+  border: 1px solid var(--audit-line);
+  padding: .9rem 1rem;
+}
+.summary-score span { color: var(--audit-muted); font-size: .8rem; font-weight: 700; }
+.summary-score strong { grid-row: 1 / 3; grid-column: 2; color: var(--audit-blue); font-size: 2rem; }
+.summary-score small { color: var(--audit-navy); }
+.summary-score.context-score { background: #f6f3ff; border-color: #d8cdf7; }
+.summary-score.context-score strong { color: #6b46c1; }
 .score-values { border-right: 1px solid var(--audit-line); padding-right: 2.2rem; }
 .score-value-row {
   display: flex;
@@ -125,6 +160,7 @@ p, label, input, button { font-size: .94rem; }
 }
 .score-value-row strong { color: var(--audit-blue); font-size: 1.15rem; }
 .score-value-row strong.critical { color: var(--audit-red); }
+.score-weight { color: var(--audit-muted); font-size: .72rem; font-weight: 400; }
 .bar-chart { padding: .1rem 0; }
 .bar-row {
   display: grid;
@@ -149,6 +185,7 @@ p, label, input, button { font-size: .94rem; }
   letter-spacing: .035em;
 }
 .risk-table td { padding: .85rem .7rem; border-bottom: 1px solid var(--audit-line); }
+.risk-context { color: var(--audit-muted); font-size: .76rem; line-height: 1.4; margin-top: .25rem; }
 .table-scroll { width: 100%; overflow-x: auto; margin: .7rem 0 1.25rem; }
 .history-table {
   width: 100%; min-width: 650px; border-collapse: collapse; font-size: .9rem;
@@ -167,6 +204,7 @@ p, label, input, button { font-size: .94rem; }
 .history-table td { padding: .72rem .7rem; border: 1px solid var(--audit-line); }
 .history-table strong { color: var(--audit-blue); }
 .comparison-table { min-width: 520px; }
+.context-table { min-width: 460px; }
 .comparison-table .delta-up { color: #16803a; font-weight: 750; }
 .comparison-table .delta-down { color: var(--audit-red); font-weight: 750; }
 .risk-mark { width: 5px; padding: 0 !important; }
@@ -206,6 +244,8 @@ p, label, input, button { font-size: .94rem; }
 .roadmap-day { color: var(--audit-blue); font-weight: 800; margin-bottom: .3rem; }
 .roadmap-title { font-weight: 700; margin-bottom: .45rem; }
 .roadmap-actions { color: var(--audit-muted); font-size: .83rem; line-height: 1.45; }
+.roadmap-actions ul { margin: .3rem 0 0; padding-left: 1.05rem; }
+.roadmap-actions li + li { margin-top: .45rem; }
 .overall-note { color: var(--audit-muted); font-size: .84rem; margin-top: -.3rem; }
 [data-testid="stDataFrame"] { border: 1px solid var(--audit-line); }
 
@@ -213,6 +253,7 @@ p, label, input, button { font-size: .94rem; }
   [data-testid="stMainBlockContainer"] { padding: 1.4rem 1rem 3rem; }
   h1 { font-size: 1.65rem !important; }
   .score-layout { grid-template-columns: 1fr; gap: 1.2rem; }
+  .score-summary { grid-template-columns: 1fr; }
   .score-values { border-right: 0; border-bottom: 1px solid var(--audit-line); padding: 0 0 .7rem; }
   .bar-row { grid-template-columns: 112px 1fr 30px; gap: .45rem; }
   .risk-table th:nth-child(3), .risk-table td:nth-child(3) { display: none; }

@@ -11,31 +11,20 @@ from typing import Any
 import streamlit as st
 
 from it_audit.catalog import CATEGORIES, questions_for_category
+from it_audit.context import (
+    SUPPORTED_EMPLOYEE_RANGES,
+    SUPPORTED_INDUSTRIES,
+    normalize_employee_range,
+)
 from it_audit.models import AuditResult, AuditSummary, CompanyProfile
 from it_audit.report import render_html_report
-from it_audit.scoring import NOT_APPLICABLE, calculate_result
+from it_audit.scoring import NOT_APPLICABLE, calculate_result, maturity_label
 from it_audit.storage import delete_audit, get_audit, list_audits, save_audit
 
 LOGGER = logging.getLogger(__name__)
 
-INDUSTRIES = (
-    "Финансы",
-    "Ритейл",
-    "Производство",
-    "Транспорт и логистика",
-    "Профессиональные услуги",
-    "Государственный сектор",
-    "Информационные технологии",
-    "Телекоммуникации",
-    "Энергетика и ЖКХ",
-    "Строительство и недвижимость",
-    "Здравоохранение",
-    "Образование",
-    "Другое",
-)
-
-EMPLOYEE_RANGES = ("1–50", "51–100", "101–250", "251–1000", "Более 1000")
-LEGACY_EMPLOYEE_RANGES = {"До 50": "1–50", "50–100": "51–100"}
+INDUSTRIES = SUPPORTED_INDUSTRIES
+EMPLOYEE_RANGES = SUPPORTED_EMPLOYEE_RANGES
 ANSWER_OPTIONS = (1, 2, 3, 4, 5, NOT_APPLICABLE)
 DRAFT_KEY = "audit_draft"
 HISTORY_NOTICE_KEY = "history_notice"
@@ -67,7 +56,7 @@ def _reset_draft() -> None:
 
 
 def _normalize_employee_range(value: str) -> str:
-    return LEGACY_EMPLOYEE_RANGES.get(value, value)
+    return normalize_employee_range(value)
 
 
 def _start_repeat(result: AuditResult) -> None:
@@ -102,9 +91,7 @@ def _profile_header(profile: dict[str, str], step: int) -> None:
             unsafe_allow_html=True,
         )
         details = " · ".join(
-            escape(value)
-            for value in (profile["industry"], profile["employee_range"])
-            if value
+            escape(value) for value in (profile["industry"], profile["employee_range"]) if value
         )
         if details:
             st.markdown(f'<div class="audit-meta">{details}</div>', unsafe_allow_html=True)
@@ -139,7 +126,8 @@ def _render_profile_step(draft: dict[str, Any]) -> None:
             placeholder="Выберите диапазон",
         )
         st.caption(
-            "Отрасль и численность добавляются в отчёт, но не изменяют баллы, риски и план."
+            "Отрасль и численность задают веса контекстной оценки, приоритет рисков "
+            "и формат рекомендаций. Базовая зрелость остаётся сопоставимой."
         )
         st.markdown('<div class="audit-section-rule"></div>', unsafe_allow_html=True)
         _, action = st.columns([2.6, 1])
@@ -166,6 +154,8 @@ def _render_profile_step(draft: dict[str, Any]) -> None:
 
 
 def _render_question_step(draft: dict[str, Any]) -> None:
+    if not isinstance(draft.get("step"), int) or not 1 <= draft["step"] <= len(CATEGORIES):
+        draft["step"] = len(CATEGORIES)
     category_index = draft["step"] - 1
     category = CATEGORIES[category_index]
     questions = questions_for_category(category.key)
@@ -193,15 +183,9 @@ def _render_question_step(draft: dict[str, Any]) -> None:
                 values[question.id] = st.radio(
                     question.text,
                     options=ANSWER_OPTIONS,
-                    index=(
-                        ANSWER_OPTIONS.index(saved_value)
-                        if saved_value is not None
-                        else None
-                    ),
+                    index=(ANSWER_OPTIONS.index(saved_value) if saved_value is not None else None),
                     format_func=(
-                        lambda value: "Не применимо"
-                        if value == NOT_APPLICABLE
-                        else str(value)
+                        lambda value: "Не применимо" if value == NOT_APPLICABLE else str(value)
                     ),
                     horizontal=True,
                     label_visibility="collapsed",
@@ -258,8 +242,10 @@ def _score_markup(result: AuditResult) -> str:
         score_label = "Н/Д" if score is None else str(score)
         width = 0 if score is None else score
         critical = " critical" if score is not None and score < 40 else ""
+        weight = result.category_weights.get(category.key)
+        weight_label = f'<small class="score-weight">×{weight:.2f}</small>' if weight else ""
         values.append(
-            f'<div class="score-value-row"><span>{escape(category.title)}</span>'
+            f'<div class="score-value-row"><span>{escape(category.title)} {weight_label}</span>'
             f'<strong class="{critical.strip()}">{score_label}</strong></div>'
         )
         bars.append(
@@ -279,38 +265,75 @@ def _score_markup(result: AuditResult) -> str:
 def _risk_markup(result: AuditResult) -> str:
     if not result.risks:
         return (
-            '<div class="empty-state">'
-            "Существенных рисков по результатам анкеты не выявлено.</div>"
+            '<div class="empty-state">Существенных рисков по результатам анкеты не выявлено.</div>'
         )
     severity_classes = {"Высокий": "high", "Средний": "medium", "Низкий": "low"}
     rows = []
     for risk in result.risks:
         severity_class = severity_classes[risk.severity]
+        context_markup = (
+            f'<div class="risk-context">{escape(risk.context)}</div>' if risk.context else ""
+        )
         rows.append(
             f'<tr><td class="risk-mark {severity_class}"></td>'
-            f'<td>{escape(risk.title)}</td>'
+            f"<td>{escape(risk.title)}{context_markup}</td>"
             f'<td><span class="severity {severity_class}">{escape(risk.severity)}</span></td>'
-            f'<td>{risk.horizon_days} дней</td></tr>'
+            f"<td>{risk.horizon_days} дней</td></tr>"
         )
     return (
         '<table class="risk-table"><thead><tr><th></th><th>Риск</th>'
-        '<th>Уровень</th><th>Горизонт</th></tr></thead><tbody>'
-        + "".join(rows)
-        + "</tbody></table>"
+        "<th>Уровень</th><th>Горизонт</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
     )
 
 
 def _roadmap_markup(result: AuditResult) -> str:
     items = []
     for item in result.roadmap:
-        actions = "<br>".join(escape(action) for action in item.actions)
+        actions = "".join(f"<li>{escape(action)}</li>" for action in item.actions)
         items.append(
             '<div class="roadmap-item">'
             f'<div class="roadmap-day">{item.horizon_days} дней</div>'
             f'<div class="roadmap-title">{escape(item.title)}</div>'
-            f'<div class="roadmap-actions">{actions}</div></div>'
+            f'<div class="roadmap-actions"><ul>{actions}</ul></div></div>'
         )
     return '<div class="roadmap">' + "".join(items) + "</div>"
+
+
+def _render_context_explanation(result: AuditResult) -> None:
+    if result.context_score is None or not result.category_weights:
+        return
+    with st.expander("Как учтены отрасль и масштаб"):
+        st.markdown(
+            f"Для профиля **{escape(result.profile.industry)} · "
+            f"{escape(result.profile.employee_range)} сотрудников** базовые оценки "
+            "направлений умножаются на следующие веса:"
+        )
+        rows = []
+        for category in CATEGORIES:
+            weight = result.category_weights[category.key]
+            if weight > 1.05:
+                influence = "повышенный приоритет"
+            elif weight < 0.95:
+                influence = "пониженный приоритет"
+            else:
+                influence = "базовый приоритет"
+            rows.append(
+                "<tr>"
+                f"<td>{escape(category.title)}</td>"
+                f"<td>×{weight:.2f}</td>"
+                f"<td>{influence}</td>"
+                "</tr>"
+            )
+        st.markdown(
+            '<div class="table-scroll"><table class="history-table context-table">'
+            "<thead><tr><th>Направление</th><th>Вес</th><th>Влияние</th></tr></thead>"
+            f"<tbody>{''.join(rows)}</tbody></table></div>",
+            unsafe_allow_html=True,
+        )
+        st.caption(
+            "Базовая зрелость не меняется. Вес влияет на контекстную оценку и может "
+            "повысить серьёзность связанного риска на один уровень."
+        )
 
 
 def _result_actions(result: AuditResult, *, allow_save: bool, saved: bool) -> None:
@@ -355,15 +378,31 @@ def render_result(result: AuditResult, *, allow_save: bool, saved: bool = False)
         f'<div class="audit-company">{escape(result.profile.name)}</div>',
         unsafe_allow_html=True,
     )
+    context_card = ""
+    if result.context_score is not None:
+        context_maturity = maturity_label(result.context_score)
+        context_card = (
+            '<div class="summary-score context-score">'
+            "<span>Контекстная оценка</span>"
+            f"<strong>{result.context_score}</strong>"
+            f"<small>{escape(context_maturity)} · отрасль и масштаб</small></div>"
+        )
     st.markdown(
-        f'<div class="overall-note">Общая оценка: {result.overall_score} · '
-        f'{escape(result.maturity)} уровень · Версия анкеты: '
-        f'{escape(result.questionnaire_version)} · Версия приложения: '
-        f'{escape(result.app_version)}</div>',
+        '<div class="score-summary">'
+        '<div class="summary-score"><span>Базовая зрелость</span>'
+        f"<strong>{result.overall_score}</strong>"
+        f"<small>{escape(result.maturity)} · единая методика</small></div>"
+        f"{context_card}</div>"
+        f'<div class="overall-note">Версия анкеты: {escape(result.questionnaire_version)} · '
+        f"Версия приложения: {escape(result.app_version)}</div>",
         unsafe_allow_html=True,
     )
     st.markdown(_score_markup(result), unsafe_allow_html=True)
-    st.caption("Ответы «Не применимо» исключены из расчёта среднего балла.")
+    st.caption(
+        "Вес × рядом с направлением влияет только на контекстную оценку. "
+        "Ответы «Не применимо» исключены из расчёта."
+    )
+    _render_context_explanation(result)
     st.subheader("Ключевые риски")
     st.markdown(_risk_markup(result), unsafe_allow_html=True)
     st.subheader("План 30 / 60 / 90 дней")
@@ -375,8 +414,12 @@ def render_audit_page() -> None:
     """Показывает текущий шаг нового аудита или его результат."""
 
     draft = _draft()
-    if isinstance(draft["result"], AuditResult):
-        render_result(draft["result"], allow_save=True, saved=draft["saved"])
+    result = draft.get("result")
+    if result is not None:
+        # Streamlit may reload the module after a source update while keeping the
+        # previous AuditResult instance in session_state. Attribute access remains
+        # valid even though isinstance() against the reloaded class would be false.
+        render_result(result, allow_save=True, saved=draft["saved"])
         st.markdown('<div style="height:.5rem"></div>', unsafe_allow_html=True)
         if st.button("Начать новый аудит", type="tertiary"):
             _reset_draft()
@@ -430,8 +473,7 @@ def _render_comparison(selected: AuditResult, summaries: list[AuditSummary]) -> 
         summary
         for summary in summaries
         if summary.id != selected.id
-        and summary.company_name.strip().casefold()
-        == selected.profile.name.strip().casefold()
+        and summary.company_name.strip().casefold() == selected.profile.name.strip().casefold()
     ]
     if not candidates:
         return
@@ -469,19 +511,28 @@ def _render_comparison(selected: AuditResult, summaries: list[AuditSummary]) -> 
     earlier_column.metric(
         f"Было · {_format_history_date(earlier.created_at)}", earlier.overall_score
     )
-    later_column.metric(
-        f"Стало · {_format_history_date(later.created_at)}", later.overall_score
-    )
+    later_column.metric(f"Стало · {_format_history_date(later.created_at)}", later.overall_score)
     delta_column.metric("Изменение", f"{overall_delta:+d}")
 
     rows = []
+    if earlier.context_score is not None or later.context_score is not None:
+        context_delta = (
+            None
+            if earlier.context_score is None or later.context_score is None
+            else later.context_score - earlier.context_score
+        )
+        context_delta_label = "—" if context_delta is None else f"{context_delta:+d}"
+        rows.append(
+            "<tr><td><strong>Контекстная оценка</strong></td>"
+            f"<td>{_score_text(earlier.context_score)}</td>"
+            f"<td>{_score_text(later.context_score)}</td>"
+            f"<td>{context_delta_label}</td></tr>"
+        )
     for category in CATEGORIES:
         earlier_score = earlier.scores[category.key]
         later_score = later.scores[category.key]
         delta = (
-            None
-            if earlier_score is None or later_score is None
-            else later_score - earlier_score
+            None if earlier_score is None or later_score is None else later_score - earlier_score
         )
         delta_label = "—" if delta is None else f"{delta:+d}"
         if delta is None or delta == 0:
@@ -540,6 +591,7 @@ def render_history_page(new_audit_page: Any | None = None) -> None:
         f"<td>{escape(summary.company_name)}</td>"
         f"<td>{escape(summary.industry)}</td>"
         f"<td><strong>{summary.overall_score}</strong></td>"
+        f"<td>{_score_text(summary.context_score)}</td>"
         f"<td>{escape(summary.maturity)}</td>"
         f"<td>{escape(summary.questionnaire_version)}</td>"
         "</tr>"
@@ -548,7 +600,7 @@ def render_history_page(new_audit_page: Any | None = None) -> None:
     st.markdown(
         '<div class="table-scroll"><table class="history-table">'
         "<thead><tr><th>Дата</th><th>Компания</th><th>Отрасль</th>"
-        "<th>Оценка</th><th>Уровень</th><th>Анкета</th></tr></thead>"
+        "<th>База</th><th>Контекст</th><th>Уровень</th><th>Анкета</th></tr></thead>"
         f"<tbody>{history_rows}</tbody></table></div>",
         unsafe_allow_html=True,
     )
@@ -581,8 +633,7 @@ def render_history_page(new_audit_page: Any | None = None) -> None:
         repeat_clicked = st.button("Повторить аудит", type="primary", use_container_width=True)
     with delete_column, st.popover("Удалить отчёт", use_container_width=True):
         st.warning(
-            f"Удалить аудит «{selected_summary.company_name}»? "
-            "Это действие нельзя отменить."
+            f"Удалить аудит «{selected_summary.company_name}»? Это действие нельзя отменить."
         )
         delete_confirmed = st.button(
             "Удалить безвозвратно",

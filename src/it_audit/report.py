@@ -24,10 +24,12 @@ def _score_rows(result: AuditResult) -> str:
         score_label = "Н/Д" if score is None else str(score)
         width = 0 if score is None else score
         color = "#98a2b3" if score is None else "#e53935" if score < 40 else "#123fad"
+        weight = result.category_weights.get(category.key)
+        weight_label = f" <small>×{weight:.2f}</small>" if weight is not None else ""
         rows.append(
             f"""
             <div class="score-row">
-              <div class="score-label">{escape(category.title)}</div>
+              <div class="score-label">{escape(category.title)}{weight_label}</div>
               <div class="score-track">
                 <div class="score-fill" style="width:{width}%;background:{color}"></div>
               </div>
@@ -44,7 +46,9 @@ def _risk_rows(result: AuditResult) -> str:
     return "".join(
         f"""
         <tr>
-          <td>{escape(risk.title)}</td>
+          <td>{escape(risk.title)}
+            {f'<div class="risk-context">{escape(risk.context)}</div>' if risk.context else ""}
+          </td>
           <td>
             <span class="severity severity-{risk.severity.lower()}">
               {escape(risk.severity)}
@@ -63,7 +67,7 @@ def _roadmap_columns(result: AuditResult) -> str:
         <article class="roadmap-item">
           <div class="roadmap-day">{item.horizon_days} дней</div>
           <h3>{escape(item.title)}</h3>
-          <ul>{''.join(f'<li>{escape(action)}</li>' for action in item.actions)}</ul>
+          <ul>{"".join(f"<li>{escape(action)}</li>" for action in item.actions)}</ul>
         </article>
         """
         for item in result.roadmap
@@ -74,6 +78,12 @@ def render_html_report(result: AuditResult) -> str:
     """Возвращает автономный UTF-8 HTML без внешних ресурсов и скриптов."""
 
     company = escape(result.profile.name)
+    context_score = (
+        f'<div class="context-overall"><strong>{result.context_score}</strong>'
+        "<span>Контекстная оценка с учётом отрасли и масштаба</span></div>"
+        if result.context_score is not None
+        else ""
+    )
     return f"""<!doctype html>
 <html lang="ru">
 <head>
@@ -94,6 +104,9 @@ def render_html_report(result: AuditResult) -> str:
     .meta {{ color:var(--muted); display:flex; gap:24px; flex-wrap:wrap; }}
     .overall {{ display:flex; align-items:baseline; gap:12px; margin-top:24px; }}
     .overall strong {{ color:var(--blue); font-size:42px; line-height:1; }}
+    .context-overall {{ display:flex; align-items:baseline; gap:12px; margin-top:10px; }}
+    .context-overall strong {{ color:#6b46c1; font-size:28px; }}
+    .score-label small {{ color:var(--muted); font-weight:400; }}
     .score-row {{ display:grid; grid-template-columns:220px 1fr 42px; gap:16px;
       align-items:center; padding:11px 0; }}
     .score-track {{ height:14px; background:#edf0f6; overflow:hidden; }}
@@ -104,6 +117,7 @@ def render_html_report(result: AuditResult) -> str:
     .severity {{ font-weight:700; }}
     .severity-высокий {{ color:var(--red); }} .severity-средний {{ color:#c36b00; }}
     .severity-низкий {{ color:var(--blue); }}
+    .risk-context {{ color:var(--muted); font-size:12px; margin-top:4px; }}
     .roadmap {{ display:grid; grid-template-columns:repeat(3, 1fr); gap:28px;
       border-top:2px solid var(--line); padding-top:20px; }}
     .roadmap-day {{ color:var(--blue); font-weight:800; }}
@@ -134,12 +148,14 @@ def render_html_report(result: AuditResult) -> str:
     </div>
     <div class="overall">
       <strong>{result.overall_score}</strong>
-      <span>{escape(result.maturity)} уровень</span>
+      <span>Базовая зрелость · {escape(result.maturity)} уровень</span>
     </div>
+    {context_score}
   </header>
   <section>
     <h2>Оценки по направлениям</h2>{_score_rows(result)}
-    <p class="meta">Ответы «Не применимо» исключены из расчёта среднего балла.</p>
+    <p class="meta">Вес рядом с направлением отражает отрасль и масштаб. Ответы
+      «Не применимо» исключены из расчёта.</p>
   </section>
   <section><h2>Ключевые риски</h2><table>
     <thead><tr><th>Риск</th><th>Уровень</th><th>Горизонт</th></tr></thead>

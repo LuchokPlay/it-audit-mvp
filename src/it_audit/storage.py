@@ -31,7 +31,9 @@ CREATE TABLE IF NOT EXISTS audits (
     risks_json TEXT NOT NULL,
     roadmap_json TEXT NOT NULL,
     questionnaire_version TEXT NOT NULL DEFAULT '1.0',
-    app_version TEXT NOT NULL DEFAULT '0.2.0'
+    app_version TEXT NOT NULL DEFAULT '0.2.0',
+    context_score INTEGER CHECK (context_score BETWEEN 0 AND 100),
+    category_weights_json TEXT NOT NULL DEFAULT '{}'
 )
 """
 
@@ -64,12 +66,14 @@ def init_db(db_path: str | Path | None = None) -> None:
         }
         migrations = {
             "questionnaire_version": (
-                "ALTER TABLE audits ADD COLUMN questionnaire_version "
-                "TEXT NOT NULL DEFAULT '1.0'"
+                "ALTER TABLE audits ADD COLUMN questionnaire_version TEXT NOT NULL DEFAULT '1.0'"
             ),
             "app_version": (
-                "ALTER TABLE audits ADD COLUMN app_version "
-                "TEXT NOT NULL DEFAULT '0.2.0'"
+                "ALTER TABLE audits ADD COLUMN app_version TEXT NOT NULL DEFAULT '0.2.0'"
+            ),
+            "context_score": "ALTER TABLE audits ADD COLUMN context_score INTEGER",
+            "category_weights_json": (
+                "ALTER TABLE audits ADD COLUMN category_weights_json TEXT NOT NULL DEFAULT '{}'"
             ),
         }
         for column, migration in migrations.items():
@@ -87,8 +91,9 @@ def save_audit(result: AuditResult, db_path: str | Path | None = None) -> bool:
             INSERT OR IGNORE INTO audits (
                 id, created_at, company_name, industry, employee_range,
                 overall_score, maturity, answers_json, scores_json,
-                risks_json, roadmap_json, questionnaire_version, app_version
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                risks_json, roadmap_json, questionnaire_version, app_version,
+                context_score, category_weights_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 result.id,
@@ -104,6 +109,8 @@ def save_audit(result: AuditResult, db_path: str | Path | None = None) -> bool:
                 json.dumps([item.to_dict() for item in result.roadmap], ensure_ascii=False),
                 result.questionnaire_version,
                 result.app_version,
+                result.context_score,
+                json.dumps(result.category_weights, ensure_ascii=False, sort_keys=True),
             ),
         )
         return cursor.rowcount == 1
@@ -117,7 +124,7 @@ def list_audits(db_path: str | Path | None = None) -> list[AuditSummary]:
         rows = connection.execute(
             """
             SELECT id, created_at, company_name, industry, overall_score, maturity,
-                   questionnaire_version, app_version
+                   questionnaire_version, app_version, context_score
             FROM audits
             ORDER BY created_at DESC
             """
@@ -132,6 +139,7 @@ def list_audits(db_path: str | Path | None = None) -> list[AuditSummary]:
             maturity=row["maturity"],
             questionnaire_version=row["questionnaire_version"],
             app_version=row["app_version"],
+            context_score=row["context_score"],
         )
         for row in rows
     ]
@@ -165,11 +173,13 @@ def get_audit(audit_id: str, db_path: str | Path | None = None) -> AuditResult |
         overall_score=row["overall_score"],
         maturity=row["maturity"],
         risks=tuple(RiskItem.from_dict(item) for item in json.loads(row["risks_json"])),
-        roadmap=tuple(
-            RoadmapItem.from_dict(item) for item in json.loads(row["roadmap_json"])
-        ),
+        roadmap=tuple(RoadmapItem.from_dict(item) for item in json.loads(row["roadmap_json"])),
         questionnaire_version=row["questionnaire_version"],
         app_version=row["app_version"],
+        context_score=row["context_score"],
+        category_weights={
+            key: float(value) for key, value in json.loads(row["category_weights_json"]).items()
+        },
     )
 
 

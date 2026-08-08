@@ -31,6 +31,7 @@ def test_storage_round_trip_and_duplicate_protection(tmp_path) -> None:
     assert summaries[0].company_name == "Альфа Логистика"
     assert summaries[0].questionnaire_version == result.questionnaire_version
     assert summaries[0].app_version == result.app_version
+    assert summaries[0].context_score == result.context_score
     assert restored == result
 
 
@@ -76,3 +77,5 @@ def test_init_db_adds_questionnaire_version_to_existing_database(tmp_path) -> No
         columns = {row[1] for row in connection.execute("PRAGMA table_info(audits)")}
     assert "questionnaire_version" in columns
     assert "app_version" in columns
+    assert "context_score" in columns
+    assert "category_weights_json" in columns

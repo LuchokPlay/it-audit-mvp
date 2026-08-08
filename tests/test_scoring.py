@@ -26,6 +26,7 @@ def test_extreme_answers_normalize_to_expected_score(answer: int, expected: int)
     result = calculate_result(PROFILE, answers_with(answer))
 
     assert result.overall_score == expected
+    assert result.context_score == expected
     assert set(result.scores.values()) == {expected}
 
 
@@ -49,6 +50,7 @@ def test_mixed_answers_are_scored_per_category() -> None:
         "management": 75,
     }
     assert result.overall_score == 38
+    assert result.context_score == 34
     assert result.maturity == "Критический"
     assert result.questionnaire_version == QUESTIONNAIRE_VERSION
     assert result.app_version == __version__
@@ -56,9 +58,7 @@ def test_mixed_answers_are_scored_per_category() -> None:
 
 def test_not_applicable_answers_are_excluded_from_category_average() -> None:
     answers = answers_with(5)
-    infrastructure = [
-        question for question in QUESTIONS if question.category == "infrastructure"
-    ]
+    infrastructure = [question for question in QUESTIONS if question.category == "infrastructure"]
     answers[infrastructure[0].id] = 1
     answers[infrastructure[1].id] = 5
     answers[infrastructure[2].id] = NOT_APPLICABLE
@@ -94,18 +94,38 @@ def test_not_applicable_answer_does_not_create_risk() -> None:
     assert build_risks(answers) == ()
 
 
-def test_profile_metadata_does_not_change_calculation() -> None:
-    answers = answers_with(3)
-    small_retail = CompanyProfile("Магазин", "Ритейл", "До 50")
-    large_it = CompanyProfile("Платформа", "Информационные технологии", "Более 1000")
+def test_context_changes_weighted_score_but_not_base_maturity() -> None:
+    answers = answers_with(4)
+    for question in QUESTIONS:
+        if question.category == "security":
+            answers[question.id] = 2
+    finance = CompanyProfile("Банк", "Финансы", "101–250")
+    manufacturing = CompanyProfile("Завод", "Производство", "101–250")
 
-    first = calculate_result(small_retail, answers)
-    second = calculate_result(large_it, answers)
+    first = calculate_result(finance, answers)
+    second = calculate_result(manufacturing, answers)
 
     assert first.scores == second.scores
     assert first.overall_score == second.overall_score
-    assert first.risks == second.risks
-    assert first.roadmap == second.roadmap
+    assert first.overall_score == 62
+    assert first.context_score == 59
+    assert second.context_score == 62
+    assert first.risks != second.risks
+    assert first.roadmap != second.roadmap
+
+
+def test_employee_range_changes_context_weights() -> None:
+    answers = answers_with(4)
+    for question in QUESTIONS:
+        if question.category == "management":
+            answers[question.id] = 2
+
+    small = calculate_result(CompanyProfile("А", "Ритейл", "1–50"), answers)
+    enterprise = calculate_result(CompanyProfile("Б", "Ритейл", "Более 1000"), answers)
+
+    assert small.overall_score == enterprise.overall_score
+    assert small.context_score > enterprise.context_score
+    assert small.category_weights != enterprise.category_weights
 
 
 def test_missing_answer_is_rejected() -> None:
@@ -124,7 +144,7 @@ def test_invalid_answer_is_rejected() -> None:
         calculate_result(PROFILE, answers)
 
 
-def test_risks_are_sorted_and_limited_to_three() -> None:
+def test_risks_are_sorted_and_limited_to_five() -> None:
     answers = answers_with(5)
     answers[QUESTIONS[0].id] = 2
     answers[QUESTIONS[1].id] = 1
@@ -133,13 +153,58 @@ def test_risks_are_sorted_and_limited_to_three() -> None:
 
     risks = build_risks(answers)
 
-    assert len(risks) == 3
+    assert len(risks) == 4
     assert [risk.question_id for risk in risks] == [
         QUESTIONS[1].id,
         QUESTIONS[3].id,
         QUESTIONS[0].id,
+        QUESTIONS[2].id,
     ]
-    assert [risk.horizon_days for risk in risks] == [30, 30, 60]
+    assert [risk.horizon_days for risk in risks] == [30, 30, 60, 90]
+
+
+def test_finance_profile_adds_compound_industry_risk_and_specific_actions() -> None:
+    answers = answers_with(5)
+    for question_id in ("security_access", "security_mfa", "security_incidents"):
+        answers[question_id] = 2
+
+    result = calculate_result(CompanyProfile("Банк", "Финансы", "251–1000"), answers)
+
+    assert len(result.risks) == 4
+    assert any("финансовые операции" in risk.title for risk in result.risks)
+    assert all(risk.severity == "Высокий" for risk in result.risks)
+    assert any("платёжный контур" in risk.action for risk in result.risks)
+    assert any("Комплексный отраслевой риск" in risk.context for risk in result.risks)
+
+
+def test_large_company_adds_compound_scale_risk() -> None:
+    answers = answers_with(5)
+    for question_id in ("security_access", "management_vendors", "management_kpi"):
+        answers[question_id] = 3
+
+    result = calculate_result(CompanyProfile("Холдинг", "Другое", "Более 1000"), answers)
+
+    scale_risk = next(risk for risk in result.risks if "Децентрализация" in risk.title)
+    assert scale_risk.severity == "Средний"
+    assert "Комплексный масштабный риск" in scale_risk.context
+    assert "бизнес-единицам" in scale_risk.action
+
+
+def test_roadmap_is_contextual_and_has_actions_for_every_horizon() -> None:
+    answers = answers_with(5)
+    answers["infra_monitoring"] = 1
+    profile = CompanyProfile("Завод", "Производство", "251–1000")
+
+    result = calculate_result(profile, answers)
+
+    assert [item.title for item in result.roadmap] == [
+        "Стабилизировать критичные зоны",
+        "Внедрить управляемые процессы",
+        "Закрепить контроль и измерить эффект",
+    ]
+    assert all(item.actions for item in result.roadmap)
+    assert any("АСУ ТП" in action for item in result.roadmap for action in item.actions)
+    assert "повторить аудит" in result.roadmap[-1].actions[-1]
 
 
 @pytest.mark.parametrize(

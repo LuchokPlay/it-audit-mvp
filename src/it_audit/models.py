@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 
@@ -46,6 +46,7 @@ class RiskItem:
     severity: str
     horizon_days: int
     action: str
+    context: str = ""
 
     def to_dict(self) -> dict[str, str | int]:
         return asdict(self)
@@ -58,6 +59,7 @@ class RiskItem:
             severity=str(value["severity"]),
             horizon_days=int(value["horizon_days"]),
             action=str(value["action"]),
+            context=str(value.get("context", "")),
         )
 
 
@@ -96,6 +98,8 @@ class AuditResult:
     roadmap: tuple[RoadmapItem, ...]
     questionnaire_version: str = "1.0"
     app_version: str = "0.2.0"
+    context_score: int | None = None
+    category_weights: dict[str, float] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -110,6 +114,8 @@ class AuditResult:
             "roadmap": [item.to_dict() for item in self.roadmap],
             "questionnaire_version": self.questionnaire_version,
             "app_version": self.app_version,
+            "context_score": self.context_score,
+            "category_weights": self.category_weights,
         }
 
     @classmethod
@@ -129,6 +135,12 @@ class AuditResult:
             roadmap=tuple(RoadmapItem.from_dict(item) for item in value["roadmap"]),
             questionnaire_version=str(value.get("questionnaire_version", "1.0")),
             app_version=str(value.get("app_version", "0.2.0")),
+            context_score=(
+                None if value.get("context_score") is None else int(value["context_score"])
+            ),
+            category_weights={
+                str(key): float(weight) for key, weight in value.get("category_weights", {}).items()
+            },
         )
 
 
@@ -142,3 +154,4 @@ class AuditSummary:
     maturity: str
     questionnaire_version: str = "1.0"
     app_version: str = "0.2.0"
+    context_score: int | None = None
