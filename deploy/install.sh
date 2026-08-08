@@ -4,8 +4,10 @@ set -Eeuo pipefail
 readonly TARGET_DIR="${IT_AUDIT_INSTALL_DIR:-/opt/it-audit}"
 readonly LOGIN_NAME="audit"
 readonly CADDY_IMAGE="caddy:2.11.4-alpine"
-readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-readonly SOURCE_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_DIR
+SOURCE_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+readonly SOURCE_DIR
 
 log() {
     printf '\n[ИТ-Аудит] %s\n' "$*"
@@ -179,11 +181,11 @@ start_application() {
     docker compose config --quiet
     docker compose up -d --build --remove-orphans
 
-    local app_id status attempt
+    local app_id status
     app_id="$(docker compose ps -q app)"
     [[ -n "${app_id}" ]] || fail "Контейнер приложения не создан."
 
-    for attempt in {1..30}; do
+    for _ in {1..30}; do
         status="$(docker inspect --format '{{.State.Health.Status}}' "${app_id}")"
         if [[ "${status}" == "healthy" ]]; then
             break
@@ -197,7 +199,7 @@ start_application() {
     [[ "${status}" == "healthy" ]] || fail "Приложение не стало готовым за 60 секунд."
 
     local http_status=""
-    for attempt in {1..15}; do
+    for _ in {1..15}; do
         http_status="$(curl -k -sS -o /dev/null -w '%{http_code}' \
             "https://${IT_AUDIT_HOST}/" || true)"
         [[ "${http_status}" == "401" ]] && break
