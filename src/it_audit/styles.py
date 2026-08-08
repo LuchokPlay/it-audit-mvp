@@ -107,6 +107,7 @@ p, label, input, button { font-size: .94rem; }
   font-weight: 700;
   border-radius: 4px;
 }
+[data-testid="stPopoverButton"] [data-testid="stIconMaterial"] { display: none; }
 .score-layout {
   display: grid;
   grid-template-columns: minmax(220px, .8fr) minmax(360px, 1.25fr);

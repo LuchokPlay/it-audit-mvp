@@ -51,6 +51,20 @@ def test_mixed_answers_are_scored_per_category() -> None:
     assert result.maturity == "Критический"
 
 
+def test_profile_metadata_does_not_change_calculation() -> None:
+    answers = answers_with(3)
+    small_retail = CompanyProfile("Магазин", "Ритейл", "До 50")
+    large_it = CompanyProfile("Платформа", "Информационные технологии", "Более 1000")
+
+    first = calculate_result(small_retail, answers)
+    second = calculate_result(large_it, answers)
+
+    assert first.scores == second.scores
+    assert first.overall_score == second.overall_score
+    assert first.risks == second.risks
+    assert first.roadmap == second.roadmap
+
+
 def test_missing_answer_is_rejected() -> None:
     answers = answers_with(4)
     answers.pop(QUESTIONS[0].id)

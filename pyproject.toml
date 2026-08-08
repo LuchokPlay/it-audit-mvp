@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "it-audit-mvp"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Локальный экспресс-аудит ИТ-зрелости компании"
 readme = "README.md"
 requires-python = ">=3.14,<3.15"
@@ -15,6 +15,9 @@ dependencies = [
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.dynamic]
+version = {attr = "it_audit.version.__version__"}
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
@@ -24,4 +27,3 @@ target-version = "py314"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
-

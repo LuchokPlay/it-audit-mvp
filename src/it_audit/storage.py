@@ -144,3 +144,14 @@ def get_audit(audit_id: str, db_path: str | Path | None = None) -> AuditResult |
         ),
     )
 
+
+def delete_audit(audit_id: str, db_path: str | Path | None = None) -> bool:
+    """Удаляет завершённый аудит; возвращает False, если UUID уже отсутствует."""
+
+    init_db(db_path)
+    with _connect(db_path) as connection:
+        cursor = connection.execute(
+            "DELETE FROM audits WHERE id = ?",
+            (audit_id,),
+        )
+        return cursor.rowcount == 1

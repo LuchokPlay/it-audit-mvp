@@ -1,7 +1,7 @@
 from it_audit.catalog import QUESTIONS
 from it_audit.models import CompanyProfile
 from it_audit.scoring import calculate_result
-from it_audit.storage import get_audit, list_audits, save_audit
+from it_audit.storage import delete_audit, get_audit, list_audits, save_audit
 
 
 def make_result():
@@ -33,3 +33,13 @@ def test_storage_round_trip_and_duplicate_protection(tmp_path) -> None:
 def test_unknown_audit_returns_none(tmp_path) -> None:
     assert get_audit("missing", tmp_path / "audit.db") is None
 
+
+def test_delete_audit_removes_only_existing_record(tmp_path) -> None:
+    database = tmp_path / "audit.db"
+    result = make_result()
+    save_audit(result, database)
+
+    assert delete_audit(result.id, database) is True
+    assert delete_audit(result.id, database) is False
+    assert get_audit(result.id, database) is None
+    assert list_audits(database) == []

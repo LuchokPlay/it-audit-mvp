@@ -14,7 +14,7 @@ from it_audit.catalog import CATEGORIES, questions_for_category
 from it_audit.models import AuditResult, CompanyProfile
 from it_audit.report import render_html_report
 from it_audit.scoring import calculate_result
-from it_audit.storage import get_audit, list_audits, save_audit
+from it_audit.storage import delete_audit, get_audit, list_audits, save_audit
 
 LOGGER = logging.getLogger(__name__)
 
@@ -25,11 +25,18 @@ INDUSTRIES = (
     "Транспорт и логистика",
     "Профессиональные услуги",
     "Государственный сектор",
+    "Информационные технологии",
+    "Телекоммуникации",
+    "Энергетика и ЖКХ",
+    "Строительство и недвижимость",
+    "Здравоохранение",
+    "Образование",
     "Другое",
 )
 
 EMPLOYEE_RANGES = ("До 50", "50–100", "101–250", "251–1000", "Более 1000")
 DRAFT_KEY = "audit_draft"
+HISTORY_NOTICE_KEY = "history_notice"
 
 
 def _empty_draft() -> dict[str, Any]:
@@ -110,6 +117,9 @@ def _render_profile_step(draft: dict[str, Any]) -> None:
                 else None
             ),
             placeholder="Выберите диапазон",
+        )
+        st.caption(
+            "Отрасль и численность добавляются в отчёт, но не изменяют баллы, риски и план."
         )
         st.markdown('<div class="audit-section-rule"></div>', unsafe_allow_html=True)
         _, action = st.columns([2.6, 1])
@@ -348,7 +358,8 @@ def render_history_page() -> None:
     """Показывает сохранённые аудиты и выбранный полный результат."""
 
     st.title("История аудитов")
-    st.caption("Завершённые аудиты хранятся только на этом компьютере.")
+    if notice := st.session_state.pop(HISTORY_NOTICE_KEY, None):
+        st.success(notice)
     try:
         summaries = list_audits()
     except sqlite3.Error:
@@ -380,15 +391,40 @@ def render_history_page() -> None:
         f"<tbody>{history_rows}</tbody></table></div>",
         unsafe_allow_html=True,
     )
+    summaries_by_id = {summary.id: summary for summary in summaries}
     selected_id = st.selectbox(
         "Открыть аудит",
-        options=[summary.id for summary in summaries],
-        format_func=lambda audit_id: next(
-            f"{summary.company_name} — {_format_history_date(summary.created_at)}"
-            for summary in summaries
-            if summary.id == audit_id
+        options=list(summaries_by_id),
+        format_func=lambda audit_id: (
+            f"{summaries_by_id[audit_id].company_name} — "
+            f"{_format_history_date(summaries_by_id[audit_id].created_at)}"
         ),
     )
+    selected_summary = summaries_by_id[selected_id]
+    delete_confirmed = False
+    delete_column, _ = st.columns([1.2, 2.8])
+    with delete_column, st.popover("Удалить отчёт", use_container_width=True):
+        st.warning(
+            f"Удалить аудит «{selected_summary.company_name}»? "
+            "Это действие нельзя отменить."
+        )
+        delete_confirmed = st.button(
+            "Удалить безвозвратно",
+            key=f"confirm_delete_{selected_id}",
+            use_container_width=True,
+        )
+    if delete_confirmed:
+        try:
+            deleted = delete_audit(selected_id)
+        except sqlite3.Error:
+            LOGGER.exception("Не удалось удалить аудит")
+            st.error("Не удалось удалить выбранный аудит.")
+            return
+        if deleted:
+            st.session_state[HISTORY_NOTICE_KEY] = "Отчёт удалён из истории."
+            st.rerun()
+        st.warning("Выбранный аудит уже отсутствует в истории.")
+        return
     try:
         result = get_audit(selected_id)
     except sqlite3.Error:
