@@ -1,5 +1,6 @@
 {
     admin off
+    default_sni __IT_AUDIT_HOST__
 }
 
 https://__IT_AUDIT_HOST__ {

@@ -22,6 +22,7 @@ def test_caddy_requires_encrypted_authentication() -> None:
     caddyfile = read("deploy/Caddyfile.example")
 
     assert "https://__IT_AUDIT_HOST__" in caddyfile
+    assert "default_sni __IT_AUDIT_HOST__" in caddyfile
     assert "tls internal" in caddyfile
     assert "basic_auth" in caddyfile
     assert "__IT_AUDIT_PASSWORD_HASH__" in caddyfile
@@ -40,6 +41,7 @@ def test_installer_does_not_contain_a_default_password() -> None:
 def test_installer_checks_caddy_without_public_ip_loopback() -> None:
     installer = read("deploy/install.sh")
 
+    assert "default_sni ${IT_AUDIT_HOST}" in installer
     assert '--resolve "${IT_AUDIT_HOST}:443:127.0.0.1"' in installer
 
 

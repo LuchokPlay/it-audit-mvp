@@ -152,6 +152,7 @@ write_caddy_config() {
     cat > "${config_path}" <<EOF
 {
     admin off
+    default_sni ${IT_AUDIT_HOST}
 }
 
 https://${IT_AUDIT_HOST} {
