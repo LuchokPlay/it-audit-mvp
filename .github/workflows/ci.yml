@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14.6"
+          cache: pip
+
+      - name: Install development dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Run Python checks
+        run: |
+          ruff check .
+          pytest -q
+
+      - name: Validate deployment scripts
+        run: |
+          bash -n deploy/install.sh
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          shellcheck deploy/install.sh
+          pwsh -NoProfile -File deploy/build-bundle.ps1
+          payload_line="$(awk '/^__IT_AUDIT_PAYLOAD_BELOW__$/ {print NR + 1; exit}' dist/it-audit-installer.sh)"
+          tail -n +"${payload_line}" dist/it-audit-installer.sh | base64 --decode | tar -tzf - | grep -Fx deploy/install.sh
+
+      - name: Build application image
+        run: docker build --tag it-audit:test .
+
+      - name: Validate Caddy and Compose configuration
+        run: |
+          password_hash="$(docker run --rm caddy:2.11.4-alpine caddy hash-password --plaintext ci-password-only)"
+          CADDY_HASH="${password_hash}" python - <<'PY'
+          import os
+          from pathlib import Path
+
+          template = Path("deploy/Caddyfile.example").read_text(encoding="utf-8")
+          config = template.replace("__IT_AUDIT_HOST__", "127.0.0.1")
+          config = config.replace("__IT_AUDIT_PASSWORD_HASH__", os.environ["CADDY_HASH"])
+          Path("deploy/Caddyfile.runtime").write_text(config, encoding="utf-8")
+          PY
+          docker run --rm \
+            --volume "${PWD}/deploy/Caddyfile.runtime:/etc/caddy/Caddyfile:ro" \
+            caddy:2.11.4-alpine caddy validate --config /etc/caddy/Caddyfile
+          docker compose config --quiet
