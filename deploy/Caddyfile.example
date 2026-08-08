@@ -1,0 +1,22 @@
+{
+    admin off
+    default_sni __IT_AUDIT_HOST__
+}
+
+https://__IT_AUDIT_HOST__ {
+    tls internal
+    encode zstd gzip
+
+    basic_auth {
+        audit __IT_AUDIT_PASSWORD_HASH__
+    }
+
+    header {
+        -Server
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "no-referrer"
+    }
+
+    reverse_proxy app:8501
+}

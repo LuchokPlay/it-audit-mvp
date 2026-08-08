@@ -8,6 +8,8 @@ __pycache__/
 htmlcov/
 data/*.db
 data/*.db-*
+deploy/Caddyfile.runtime
+dist/
 .streamlit/secrets.toml
 .env
 .DS_Store
