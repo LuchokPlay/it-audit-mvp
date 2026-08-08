@@ -12,6 +12,8 @@
 - Линтер: `ruff check .`
 - Сборка VPS-инсталлятора: `powershell -File deploy/build-bundle.ps1`
 - Развёртывание на Ubuntu 22.04: `sudo bash ./it-audit-installer.sh`
+- Развёртывание из GitHub: `curl -fsSL https://raw.githubusercontent.com/LuchokPlay/it-audit-mvp/main/deploy/bootstrap.sh | sudo bash`
+- Обновление VPS: `sudo it-audit-update`
 
 ## Архитектурные правила
 

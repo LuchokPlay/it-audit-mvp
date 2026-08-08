@@ -43,6 +43,30 @@ def test_installer_checks_caddy_without_public_ip_loopback() -> None:
 
     assert "default_sni ${IT_AUDIT_HOST}" in installer
     assert '--resolve "${IT_AUDIT_HOST}:443:127.0.0.1"' in installer
+    assert installer.count("< /dev/tty") == 3
+
+
+def test_github_bootstrap_registers_update_command() -> None:
+    bootstrap = read("deploy/bootstrap.sh")
+
+    assert "https://github.com/LuchokPlay/it-audit-mvp.git" in bootstrap
+    assert 'REPOSITORY_REF="${IT_AUDIT_GITHUB_REF:-main}"' in bootstrap
+    assert 'git clone --filter=blob:none --single-branch --branch' in bootstrap
+    assert 'bash "${SOURCE_DIR}/deploy/install.sh"' in bootstrap
+    assert 'install -m 0755 "${SOURCE_DIR}/deploy/update.sh"' in bootstrap
+    assert 'mv -f "${UPDATE_COMMAND}.new" "${UPDATE_COMMAND}"' in bootstrap
+
+
+def test_github_update_preserves_runtime_data_and_password() -> None:
+    updater = read("deploy/update.sh")
+
+    assert 'git -C "${SOURCE_DIR}" fetch --depth=1 origin' in updater
+    assert 'git -C "${SOURCE_DIR}" checkout --detach' in updater
+    assert "git reset --hard" not in updater
+    assert "--exclude='data/'" in updater
+    assert "--exclude='deploy/Caddyfile.runtime'" in updater
+    assert 'docker compose up -d --build --remove-orphans' in updater
+    assert 'install -m 0755 "${SOURCE_DIR}/deploy/update.sh"' in updater
 
 
 def test_container_runs_application_as_non_root() -> None:

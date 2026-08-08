@@ -30,10 +30,10 @@ jobs:
 
       - name: Validate deployment scripts
         run: |
-          bash -n deploy/install.sh
+          bash -n deploy/bootstrap.sh deploy/install.sh deploy/update.sh
           sudo apt-get update
           sudo apt-get install -y shellcheck
-          shellcheck deploy/install.sh
+          shellcheck deploy/bootstrap.sh deploy/install.sh deploy/update.sh
           pwsh -NoProfile -File deploy/build-bundle.ps1
           payload_line="$(awk '/^__IT_AUDIT_PAYLOAD_BELOW__$/ {print NR + 1; exit}' dist/it-audit-installer.sh)"
           tail -n +"${payload_line}" dist/it-audit-installer.sh | base64 --decode | tar -tzf - | grep -Fx deploy/install.sh

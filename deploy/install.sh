@@ -96,7 +96,7 @@ detect_host() {
     [[ -n "${detected_host}" ]] || fail "Не удалось определить IP. Задайте IT_AUDIT_HOST."
 
     local entered_host
-    read -r -p "Публичный IP VPS [${detected_host}]: " entered_host
+    read -r -p "Публичный IP VPS [${detected_host}]: " entered_host < /dev/tty
     IT_AUDIT_HOST="${entered_host:-${detected_host}}"
     if [[ ! "${IT_AUDIT_HOST}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
         fail "Ожидался IPv4-адрес, получено: ${IT_AUDIT_HOST}"
@@ -113,13 +113,13 @@ detect_host() {
 read_password() {
     local password confirmation
     while true; do
-        read -r -s -p "Пароль для входа на сайт: " password
+        read -r -s -p "Пароль для входа на сайт: " password < /dev/tty
         printf '\n'
         [[ ${#password} -ge 12 ]] || {
             printf 'Пароль должен содержать не менее 12 символов.\n' >&2
             continue
         }
-        read -r -s -p "Повторите пароль: " confirmation
+        read -r -s -p "Повторите пароль: " confirmation < /dev/tty
         printf '\n'
         [[ "${password}" == "${confirmation}" ]] || {
             printf 'Пароли не совпадают. Попробуйте ещё раз.\n' >&2
