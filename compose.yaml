@@ -1,0 +1,38 @@
+name: it-audit
+
+services:
+  app:
+    build:
+      context: .
+    restart: unless-stopped
+    environment:
+      IT_AUDIT_DB_PATH: /app/data/it_audit.db
+    expose:
+      - "8501"
+    volumes:
+      - ./data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  caddy:
+    image: caddy:2.11.4-alpine
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile.runtime:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:
